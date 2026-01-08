@@ -409,7 +409,14 @@ public:
     }
 };
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1) {
+        std::string a2 = argv[1];
+        // TODO actually implement bench
+        if (a2 == "bench")
+            return 0;
+    }
+
     UCIEngine engine("dwchess v0.0.1", "teapot and co.", {});
     std::jthread worker([&engine]{engine.worker();});
     std::jthread updatesWorker([&engine] {engine.updatesWorker();});
