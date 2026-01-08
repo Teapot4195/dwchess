@@ -527,7 +527,7 @@ public:
 
             chess::movegen::legalmoves(ml, gameBoard);
 
-            constexpr std::uint8_t MAX_DEPTH = 8;
+            constexpr std::uint8_t MAX_DEPTH = 3;
 
             auto [score, pv] = eval_tree(ml, gameBoard, MAX_DEPTH, control, control.us != chess::Color::WHITE);
 
@@ -558,7 +558,7 @@ bool SearchControl::should_stop() const {
 
     auto& flags = engine->go_flags_;
 
-    if (flags.nodes > engine->ncount)
+    if (flags.nodes < engine->ncount)
         return true;
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - engine->start_time).count() >= atime)
