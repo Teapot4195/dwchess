@@ -1,0 +1,9 @@
+# IDE Location
+/.idea/**
+
+# Some potential build locations
+/cmake-**/**
+/build/**
+
+# Work directory
+/data/**
