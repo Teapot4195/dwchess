@@ -11,6 +11,7 @@ configure:
 
 build: configure
 	cmake --build $(BUILD_DIR)
+	cp build/dwchess $(EXE)
 
 clean:
 	rm -rf $(BUILD_DIR)
