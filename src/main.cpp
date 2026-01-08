@@ -207,6 +207,11 @@ class UCIEngine {
 
     void sendEngineOptions() {
         std::lock_guard lk_(lock_);
+
+        // NOTE: report bogus Threads and Hash values for openbench to work correctly :xdd:
+        std::cout << "option name Threads type spin default 1 min 1 max 1" << std::endl;
+        std::cout << "option name Hash type spin default 1 min 1 max 1" << std::endl;
+
         for (const auto& [opt, data] : options) {
             // std::cout << "option name " << opt << " type " << data.type_string();
         }
