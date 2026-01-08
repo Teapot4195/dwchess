@@ -6,6 +6,7 @@
 #include <mutex>
 #include <random>
 #include <ranges>
+#include <stack>
 
 struct UCIOption {
     enum TYPE {
@@ -71,6 +72,25 @@ struct GoFlags {
     std::size_t binc = std::numeric_limits<std::size_t>::max();
 };
 
+constexpr std::pair<chess::PieceType::underlying, std::int32_t> piece_score_table[5] = {
+    {chess::PieceType::PAWN, 100},
+    {chess::PieceType::KNIGHT, 300},
+    {chess::PieceType::BISHOP, 300},
+    {chess::PieceType::ROOK, 500},
+    {chess::PieceType::QUEEN, 900}
+};
+
+std::int16_t evaluate(chess::Board& board) {
+    std::int16_t score = 1;
+
+    for (auto [piece, value] : piece_score_table) {
+        score += __builtin_popcountll(board.pieces(piece, chess::Color::WHITE).getBits()) * value;
+        score -= __builtin_popcountll(board.pieces(piece, chess::Color::BLACK).getBits()) * value;
+    }
+
+    return score;
+}
+
 class UCIEngine {
     bool uci = false;
     bool debug = false;
@@ -97,6 +117,8 @@ class UCIEngine {
     int cpuload = 0;
     std::string enginestr;
     std::vector<chess::Move> curLine;
+
+    std::chrono::steady_clock::time_point start_time;
 
     std::condition_variable worker_to_main;
 
@@ -128,6 +150,12 @@ class UCIEngine {
     }
 
     void cmdUCINewGame() {
+        // TODO: make this not do something this bad :xdd:
+        while (searching) {
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(50ms);
+        }
+
         curmove = chess::Move::NO_MOVE;
         curmoven = 1;
         hashfull = 0;
@@ -142,6 +170,12 @@ class UCIEngine {
     }
 
     void cmdPosition(std::string rem) {
+        // TODO: make this not do something this bad :xdd:
+        while (searching) {
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(50ms);
+        }
+
         if (rem.starts_with("fen ")) {
             cmdUCINewGame();
             auto fpos = 4;
@@ -289,6 +323,10 @@ class UCIEngine {
     }
 
     void sendEngineUpdate() {
+        // update engine nps
+        auto t = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time).count();
+        nps = t == 0 ? 0 : ncount / t;
+
         std::lock_guard lk_(lock_);
         std::string result = "info ";
 
@@ -384,6 +422,57 @@ public:
         return uci;
     }
 
+    std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, bool min = false) {
+        for (auto& move : ml) {
+            board.makeMove(move);
+
+            {
+                auto go = board.isGameOver();
+
+                // fastpath for wins-losses
+                switch (go.second) {
+                    case chess::GameResult::WIN:
+                        move.setScore(std::numeric_limits<std::int16_t>::min());
+                        ncount++;
+                        board.unmakeMove(move);
+                        continue;
+                    case chess::GameResult::LOSE:
+                        move.setScore(std::numeric_limits<std::int16_t>::max());
+                        ncount++;
+                        board.unmakeMove(move);
+                        continue;
+                    case chess::GameResult::DRAW:
+                        move.setScore(0);
+                        ncount++;
+                        board.unmakeMove(move);
+                        continue;
+                    case chess::GameResult::NONE:
+                        break;
+                }
+            }
+
+            if (depth == 0) {
+                move.setScore(evaluate(board));
+                ncount++;
+            } else {
+                chess::Movelist child;
+                chess::movegen::legalmoves(child, board);
+
+                auto score = eval_tree(child, board, depth - 1, !min).first;
+
+                move.setScore(score);
+            }
+
+            board.unmakeMove(move);
+        }
+
+        auto iter = min ?
+            std::ranges::min_element(ml, {}, [](const chess::Move& m) { return m.score(); }) :
+            std::ranges::max_element(ml, {}, [](const chess::Move& m) { return m.score(); });
+
+        return {iter->score(), *iter};
+    }
+
     virtual void run() {
         using namespace std::chrono_literals;
 
@@ -392,35 +481,71 @@ public:
 
         std::mutex mine;
         while (!should_stop_.stop_requested()) {
-            std::unique_lock lk_(mine);
-            worker_to_main.wait(lk_, [this]{return searching;});
+            if (!searching) {
+                std::unique_lock lk_(mine);
+                worker_to_main.wait(lk_, [this]{return searching;});
+            }
 
-            std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+            start_time = std::chrono::steady_clock::now();
+
+            auto ourtime = gameBoard.sideToMove() == chess::Color::WHITE ? go_flags_.wtime : go_flags_.btime;
+            auto ourinc = gameBoard.sideToMove() == chess::Color::WHITE ? go_flags_.winc : go_flags_.binc;
+
+            auto atime = ourinc + ourtime / (5 + std::min(0u, 250 - gameBoard.fullMoveNumber()));
+
+            auto us = gameBoard.sideToMove();
+            auto them = ~us;
 
             chess::Movelist ml;
 
             chess::movegen::legalmoves(ml, gameBoard);
 
-            auto dist = std::uniform_int_distribution<std::size_t>(0, ml.size() - 1);
-            auto pv = ml[dist(gen)];
+            // auto dist = std::uniform_int_distribution<std::size_t>(0, ml.size() - 1);
+            // auto pv = ml[dist(gen)];
 
-            int it = 0;
+            constexpr std::uint8_t MAX_DEPTH = 2;
+            // std::array<std::uint8_t, MAX_DEPTH> pv{};
+            // std::uint8_t cur_depth = 0;
+
+            // std::stack<MoveTree*> cmt;
+
+            chess::Move pv;
+            std::int16_t score;
+
+            auto [sc, bm] = eval_tree(ml, gameBoard, MAX_DEPTH, us != chess::Color::WHITE);
+            score = sc;
+            pv = bm;
+
+            std::this_thread::sleep_for(50ms);
+
             while (!should_stop &&                                                  // asked to stop by GUI
-                   go_flags_.nodes == std::numeric_limits<std::size_t>::max() &&    // should stop early (RNG engine searches exactly 0 nodes :xdd:)
-                   false
+                   go_flags_.nodes <= ncount &&                                     // should stop now on node count
+                   std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count() >= atime //&& // should stop on time
+                   // !cmt.empty()
             ) {
-                std::this_thread::sleep_for(50ms);
-                if (1s < std::chrono::steady_clock::now() - start_time)
-                    sendStatus(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count(), {{pv}});
-                it++;
-            }
+                // TODO fix this garbage
+                // if (1s < std::chrono::steady_clock::now() - start_time && cur_depth > 0)
+                    // sendStatus(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count(), {{}});
 
-            sendScore(0);
-            sendDepth(0);
-            sendResult(pv);
+                // auto c = cmt.top();
+                // cmt.pop();
+                //
+                // for (auto [move, tree] : std::views::zip(c->ml, c->mv)) {
+                //     if (tree == nullptr) {
+                //         tree = new MoveTree{c, static_cast<std::uint8_t>(c->depth + 1)};
+                //         gameBoard.makeMove(move);
+                //         chess::movegen::legalmoves(tree->ml, gameBoard);
+                //         gameBoard.unmakeMove(move);
+                //     }
+                // }
+            }
 
             searching = false;
             should_stop = false;
+
+            sendScore(score);
+            sendDepth(MAX_DEPTH);
+            sendResult(pv);
         }
     }
 
@@ -452,65 +577,6 @@ int main(int argc, char** argv) {
     std::jthread updatesWorker([&engine] {engine.updatesWorker();});
 
     engine.run();
-
-    // while (board.isGameOver().second == chess::GameResult::NONE) {
-    //     std::cout << std::format("it is {} to move, board state:", board.sideToMove() == chess::Color::WHITE ? "white" : "black") << std::endl;
-    //     std::cout << "  A B C D E F G H\n";
-    //     for (auto rank : {chess::Rank::RANK_1, chess::Rank::RANK_2, chess::Rank::RANK_3, chess::Rank::RANK_4,
-    //                                   chess::Rank::RANK_5, chess::Rank::RANK_6, chess::Rank::RANK_7, chess::Rank::RANK_8}) {
-    //         std::cout << static_cast<int>(chess::Rank(rank)) << " ";
-    //         for (auto file : {chess::File::FILE_A, chess::File::FILE_B, chess::File::FILE_C, chess::File::FILE_D,
-    //                                       chess::File::FILE_E, chess::File::FILE_F, chess::File::FILE_G, chess::File::FILE_H}) {
-    //             auto p = board.at(chess::Square{file, rank});
-    //             char c;
-    //             switch (p.type().internal()) {
-    //                 case chess::PieceType::PAWN:
-    //                     c = 'p';
-    //                     break;
-    //                 case chess::PieceType::KING:
-    //                     c = 'k';
-    //                     break;
-    //                 case chess::PieceType::KNIGHT:
-    //                     c = 'n';
-    //                     break;
-    //                 case chess::PieceType::BISHOP:
-    //                     c = 'b';
-    //                     break;
-    //                 case chess::PieceType::ROOK:
-    //                     c = 'r';
-    //                     break;
-    //                 case chess::PieceType::QUEEN:
-    //                     c = 'q';
-    //                     break;
-    //                 case chess::PieceType::NONE:
-    //                     c = ' ';
-    //                     break;
-    //                 default:
-    //                     c = '?';
-    //                     break;
-    //             }
-    //
-    //             if (p.color() == chess::Color::WHITE)
-    //                 c = static_cast<char>(std::toupper(c));
-    //
-    //             std::cout << c << ' ';
-    //         }
-    //
-    //         std::cout << "\n";
-    //     }
-    //
-    //     std::string move;
-    //     std::getline(std::cin, move);
-    //
-    //     chess::Move userMove{};
-    //     try {
-    //         userMove = chess::uci::parseSan(board, move);
-    //     } catch (const chess::uci::SanParseError& e) {
-    //         continue;
-    //     }
-    //
-    //     board.makeMove(userMove);
-    // }
 
     return 0;
 }
