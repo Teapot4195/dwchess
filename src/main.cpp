@@ -6,7 +6,6 @@
 #include <mutex>
 #include <random>
 #include <ranges>
-#include <stack>
 
 struct UCIOption {
     enum TYPE {
@@ -91,6 +90,19 @@ std::int16_t evaluate(chess::Board& board) {
     return score;
 }
 
+class UCIEngine;
+
+struct SearchControl {
+    UCIEngine* engine;
+    std::size_t ourtime;
+    std::size_t ourinc;
+    std::size_t atime;
+
+    chess::Color us, them;
+
+    bool should_stop() const;
+};
+
 class UCIEngine {
     bool uci = false;
     bool debug = false;
@@ -123,6 +135,8 @@ class UCIEngine {
     std::condition_variable worker_to_main;
 
     GoFlags go_flags_;
+
+    friend struct SearchControl;
 
     /*==== UCI Command Processing Region ====*/
 
@@ -361,7 +375,6 @@ class UCIEngine {
             result.pop_back();
 
         std::cout << result << std::endl;
-        std::cerr << result << std::endl;
     }
 
     void sendResult(chess::Move best, chess::Move ponder = chess::Move::NO_MOVE) {
@@ -422,7 +435,20 @@ public:
         return uci;
     }
 
-    std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, bool min = false) {
+    std::random_device rd;
+    std::mt19937 rng{rd()};
+
+    std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, SearchControl& control, bool min = false) {
+        if (control.should_stop()) {
+            for (auto& move : ml) {
+                board.makeMove(move);
+                move.setScore(evaluate(board));
+                board.unmakeMove(move);
+                ncount++;
+            }
+            goto finish;
+        }
+
         for (auto& move : ml) {
             board.makeMove(move);
 
@@ -458,7 +484,7 @@ public:
                 chess::Movelist child;
                 chess::movegen::legalmoves(child, board);
 
-                auto score = eval_tree(child, board, depth - 1, !min).first;
+                auto score = eval_tree(child, board, depth - 1, control, !min).first;
 
                 move.setScore(score);
             }
@@ -466,6 +492,7 @@ public:
             board.unmakeMove(move);
         }
 
+    finish:
         auto iter = min ?
             std::ranges::min_element(ml, {}, [](const chess::Move& m) { return m.score(); }) :
             std::ranges::max_element(ml, {}, [](const chess::Move& m) { return m.score(); });
@@ -476,9 +503,6 @@ public:
     virtual void run() {
         using namespace std::chrono_literals;
 
-        std::random_device rd;
-        std::mt19937 gen(rd());
-
         std::mutex mine;
         while (!should_stop_.stop_requested()) {
             if (!searching) {
@@ -486,59 +510,26 @@ public:
                 worker_to_main.wait(lk_, [this]{return searching;});
             }
 
+            SearchControl control {
+                this,
+                gameBoard.sideToMove() == chess::Color::WHITE ? go_flags_.wtime : go_flags_.btime,
+                gameBoard.sideToMove() == chess::Color::WHITE ? go_flags_.winc : go_flags_.binc
+            };
+
+            control.atime = control.ourinc + control.ourtime / (5 + std::min(0u, 250 - gameBoard.fullMoveNumber()));
+
             start_time = std::chrono::steady_clock::now();
 
-            auto ourtime = gameBoard.sideToMove() == chess::Color::WHITE ? go_flags_.wtime : go_flags_.btime;
-            auto ourinc = gameBoard.sideToMove() == chess::Color::WHITE ? go_flags_.winc : go_flags_.binc;
-
-            auto atime = ourinc + ourtime / (5 + std::min(0u, 250 - gameBoard.fullMoveNumber()));
-
-            auto us = gameBoard.sideToMove();
-            auto them = ~us;
+            control.us = gameBoard.sideToMove();
+            control.them = ~control.us;
 
             chess::Movelist ml;
 
             chess::movegen::legalmoves(ml, gameBoard);
 
-            // auto dist = std::uniform_int_distribution<std::size_t>(0, ml.size() - 1);
-            // auto pv = ml[dist(gen)];
+            constexpr std::uint8_t MAX_DEPTH = 8;
 
-            constexpr std::uint8_t MAX_DEPTH = 2;
-            // std::array<std::uint8_t, MAX_DEPTH> pv{};
-            // std::uint8_t cur_depth = 0;
-
-            // std::stack<MoveTree*> cmt;
-
-            chess::Move pv;
-            std::int16_t score;
-
-            auto [sc, bm] = eval_tree(ml, gameBoard, MAX_DEPTH, us != chess::Color::WHITE);
-            score = sc;
-            pv = bm;
-
-            std::this_thread::sleep_for(50ms);
-
-            while (!should_stop &&                                                  // asked to stop by GUI
-                   go_flags_.nodes <= ncount &&                                     // should stop now on node count
-                   std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count() >= atime //&& // should stop on time
-                   // !cmt.empty()
-            ) {
-                // TODO fix this garbage
-                // if (1s < std::chrono::steady_clock::now() - start_time && cur_depth > 0)
-                    // sendStatus(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count(), {{}});
-
-                // auto c = cmt.top();
-                // cmt.pop();
-                //
-                // for (auto [move, tree] : std::views::zip(c->ml, c->mv)) {
-                //     if (tree == nullptr) {
-                //         tree = new MoveTree{c, static_cast<std::uint8_t>(c->depth + 1)};
-                //         gameBoard.makeMove(move);
-                //         chess::movegen::legalmoves(tree->ml, gameBoard);
-                //         gameBoard.unmakeMove(move);
-                //     }
-                // }
-            }
+            auto [score, pv] = eval_tree(ml, gameBoard, MAX_DEPTH, control, control.us != chess::Color::WHITE);
 
             searching = false;
             should_stop = false;
@@ -560,6 +551,21 @@ public:
         }
     }
 };
+
+bool SearchControl::should_stop() const {
+    if (engine->should_stop)
+        return true;
+
+    auto& flags = engine->go_flags_;
+
+    if (flags.nodes > engine->ncount)
+        return true;
+
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - engine->start_time).count() >= atime)
+        return true;
+
+    return false;
+}
 
 int main(int argc, char** argv) {
     if (argc > 1) {
