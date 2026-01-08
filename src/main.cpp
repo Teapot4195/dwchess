@@ -468,7 +468,7 @@ public:
                         board.unmakeMove(move);
                         continue;
                     case chess::GameResult::DRAW:
-                        move.setScore(0);
+                        move.setScore(min ? 1 : -1);
                         ncount++;
                         board.unmakeMove(move);
                         continue;
