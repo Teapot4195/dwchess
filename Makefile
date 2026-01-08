@@ -1,6 +1,8 @@
 BUILD_DIR := build
 BUILD_TYPE ?= Release
 
+EXE ?= dwchess
+
 .PHONY: all configure build clean
 
 all: build

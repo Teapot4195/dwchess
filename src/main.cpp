@@ -65,6 +65,10 @@ struct UCIOption {
 struct GoFlags {
     bool infinite = true;
     std::size_t nodes = std::numeric_limits<std::size_t>::max();
+    std::size_t wtime = std::numeric_limits<std::size_t>::max();
+    std::size_t btime = std::numeric_limits<std::size_t>::max();
+    std::size_t winc = std::numeric_limits<std::size_t>::max();
+    std::size_t binc = std::numeric_limits<std::size_t>::max();
 };
 
 class UCIEngine {
@@ -162,7 +166,7 @@ class UCIEngine {
                     std::cerr << "unknown move: " << move << std::endl;
                     return;
                 }
-                std::cerr << "playing: " << chess::uci::moveToUci(m) << std::endl;
+                // std::cerr << "playing: " << chess::uci::moveToUci(m) << std::endl;
                 gameBoard.makeMove(m);
             }
         }
@@ -178,7 +182,27 @@ class UCIEngine {
                 rem = rem.substr(6);
                 auto pos = rem.find(' ');
                 go_flags_.nodes = std::stoull(rem.substr(0, pos));
-                rem = rem.substr(pos + 1);
+                rem = pos == std::string::npos ? "" : rem.substr(pos + 1);
+            } else if (rem.starts_with("wtime ")) {
+                rem = rem.substr(6);
+                auto pos = rem.find(' ');
+                go_flags_.wtime = std::stoull(rem.substr(0, pos));
+                rem = pos == std::string::npos ? "" : rem.substr(pos + 1);
+            } else if (rem.starts_with("btime ")) {
+                rem = rem.substr(6);
+                auto pos = rem.find(' ');
+                go_flags_.btime = std::stoull(rem.substr(0, pos));
+                rem = pos == std::string::npos ? "" : rem.substr(pos + 1);
+            } else if (rem.starts_with("winc ")) {
+                rem = rem.substr(5);
+                auto pos = rem.find(' ');
+                go_flags_.winc = std::stoull(rem.substr(0, pos));
+                rem = pos == std::string::npos ? "" : rem.substr(pos + 1);
+            } else if (rem.starts_with("binc ")) {
+                rem = rem.substr(5);
+                auto pos = rem.find(' ');
+                go_flags_.binc = std::stoull(rem.substr(0, pos));
+                rem = pos == std::string::npos ? "" : rem.substr(pos + 1);
             } else {
                 std::cerr << "Parsed as much of go command as possible, have remaining: " << rem << std::endl;
                 break;
@@ -325,7 +349,7 @@ public:
             std::string i;
             std::getline(std::cin, i);
 
-            std::cerr << "received: " << i << std::endl;
+            // std::cerr << "received: " << i << std::endl;
 
             auto pos = i.find(' ');
             std::string cmd = i.substr(0, pos);
@@ -345,6 +369,8 @@ public:
                 cmdGo(rem);
             else if (cmd == "stop")
                 cmdStop();
+            else if (cmd == "setoption")
+                ;
             else if (cmd == "quit") {
                 (void)stop_.request_stop();
                 return;
@@ -378,12 +404,15 @@ public:
             auto dist = std::uniform_int_distribution<std::size_t>(0, ml.size() - 1);
             auto pv = ml[dist(gen)];
 
-            while (!should_stop &&                                              // asked to stop by GUI
-                   go_flags_.nodes == std::numeric_limits<std::size_t>::max()   // should stop early (RNG engine searches exactly 0 nodes :xdd:)
+            int it = 0;
+            while (!should_stop &&                                                  // asked to stop by GUI
+                   go_flags_.nodes == std::numeric_limits<std::size_t>::max() &&    // should stop early (RNG engine searches exactly 0 nodes :xdd:)
+                   false
             ) {
                 std::this_thread::sleep_for(50ms);
                 if (1s < std::chrono::steady_clock::now() - start_time)
                     sendStatus(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count(), {{pv}});
+                it++;
             }
 
             sendScore(0);
@@ -392,8 +421,6 @@ public:
 
             searching = false;
             should_stop = false;
-
-            std::cerr << "finished searching" << std::endl;
         }
     }
 
