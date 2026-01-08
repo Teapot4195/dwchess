@@ -413,8 +413,11 @@ int main(int argc, char** argv) {
     if (argc > 1) {
         std::string a2 = argv[1];
         // TODO actually implement bench
-        if (a2 == "bench")
+        if (a2 == "bench") {
+            std::cout << "1 nps" << std::endl;
+            std::cout << "1 nodes" << std::endl;
             return 0;
+        }
     }
 
     UCIEngine engine("dwchess v0.0.1", "teapot and co.", {});
