@@ -516,6 +516,11 @@ public:
 
                 auto score = eval_tree(child, board, depth - 1, control, !min).first;
 
+                if (score > 30000)
+                    score--;
+                else if (score < -30000)
+                    score++;
+
                 move.setScore(score);
             }
 
