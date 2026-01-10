@@ -443,7 +443,10 @@ public:
                                std::numeric_limits<std::int16_t>::max();
         auto bad = min ? std::numeric_limits<std::int16_t>::max() :
                               std::numeric_limits<std::int16_t>::min();
+        bool found_good = false;
+
         if (control.should_stop()) {
+        out_of_time:
             for (auto& move : ml) {
                 board.makeMove(move);
 
@@ -493,6 +496,7 @@ public:
                         board.unmakeMove(move);
                         continue;
                     case chess::GameResult::LOSE:
+                        found_good = true;
                         move.setScore(good);
                         ncount++;
                         board.unmakeMove(move);
@@ -506,6 +510,18 @@ public:
                         break;
                 }
             }
+
+            board.unmakeMove(move);
+        }
+
+        if (found_good)
+            goto finish;
+
+        if (control.should_stop())
+            goto out_of_time;
+
+        for (auto& move : ml) {
+            board.makeMove(move);
 
             if (depth == 0) {
                 move.setScore(evaluate(board));
