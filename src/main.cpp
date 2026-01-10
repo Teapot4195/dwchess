@@ -80,7 +80,7 @@ constexpr std::pair<chess::PieceType::underlying, std::int32_t> piece_score_tabl
 };
 
 std::int16_t evaluate(chess::Board& board) {
-    std::int16_t score = 1;
+    std::int16_t score = 0;
 
     for (auto [piece, value] : piece_score_table) {
         score += __builtin_popcountll(board.pieces(piece, chess::Color::WHITE).getBits()) * value;
@@ -439,9 +439,39 @@ public:
     std::mt19937 rng{rd()};
 
     std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, SearchControl& control, bool min = false) {
+        auto good = min ? std::numeric_limits<std::int16_t>::min() :
+                               std::numeric_limits<std::int16_t>::max();
+        auto bad = min ? std::numeric_limits<std::int16_t>::max() :
+                              std::numeric_limits<std::int16_t>::min();
         if (control.should_stop()) {
             for (auto& move : ml) {
                 board.makeMove(move);
+
+                if (board.inCheck()) {
+                    auto go = board.isGameOver();
+
+                    // fastpath for wins-losses
+                    switch (go.second) {
+                        case chess::GameResult::WIN:
+                            move.setScore(bad);
+                            ncount++;
+                            board.unmakeMove(move);
+                            continue;
+                        case chess::GameResult::LOSE:
+                            move.setScore(good);
+                            ncount++;
+                            board.unmakeMove(move);
+                            continue;
+                        case chess::GameResult::DRAW:
+                            move.setScore(min ? 1 : -1);
+                            ncount++;
+                            board.unmakeMove(move);
+                            continue;
+                        case chess::GameResult::NONE:
+                            break;
+                    }
+                }
+
                 move.setScore(evaluate(board));
                 board.unmakeMove(move);
                 ncount++;
@@ -452,18 +482,18 @@ public:
         for (auto& move : ml) {
             board.makeMove(move);
 
-            {
+            if (board.inCheck()) {
                 auto go = board.isGameOver();
 
                 // fastpath for wins-losses
                 switch (go.second) {
                     case chess::GameResult::WIN:
-                        move.setScore(std::numeric_limits<std::int16_t>::min());
+                        move.setScore(bad);
                         ncount++;
                         board.unmakeMove(move);
                         continue;
                     case chess::GameResult::LOSE:
-                        move.setScore(std::numeric_limits<std::int16_t>::max());
+                        move.setScore(good);
                         ncount++;
                         board.unmakeMove(move);
                         continue;
@@ -527,7 +557,7 @@ public:
 
             chess::movegen::legalmoves(ml, gameBoard);
 
-            constexpr std::uint8_t MAX_DEPTH = 3;
+            constexpr std::uint8_t MAX_DEPTH = 5;
 
             auto [score, pv] = eval_tree(ml, gameBoard, MAX_DEPTH, control, control.us != chess::Color::WHITE);
 
