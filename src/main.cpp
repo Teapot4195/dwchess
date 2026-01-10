@@ -143,14 +143,11 @@ class UCIEngine {
 
     void cmdPosition(std::string rem) {
         if (rem.starts_with("fen ")) {
+            cmdUCINewGame();
             auto fpos = 4;
             auto epos = rem.find(" moves ");
             gameBoard.setFen(rem.substr(fpos, epos == std::string::npos ? epos : epos - fpos));
-
-            if (epos == std::string::npos)
-                rem = "";
-            else
-                rem = rem.substr(epos + 7);
+            rem = epos == std::string::npos ? "" : rem.substr(epos);
         } else if (rem.starts_with("startpos"))
             cmdUCINewGame();
         auto pos = rem.find("moves ");
