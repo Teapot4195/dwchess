@@ -578,7 +578,16 @@ public:
 
             chess::movegen::legalmoves(ml, gameBoard);
 
-            constexpr std::uint8_t MAX_DEPTH = 5;
+            std::uint8_t MAX_DEPTH = 1;
+
+            if (control.atime > 1000)
+                MAX_DEPTH = 3;
+
+            if (control.atime > 5000)
+                MAX_DEPTH++;
+
+            if (control.atime > 10000)
+                MAX_DEPTH++;
 
             auto [score, pv] = eval_tree(ml, gameBoard, MAX_DEPTH, control, control.us != chess::Color::WHITE);
 
