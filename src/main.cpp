@@ -527,13 +527,12 @@ public:
             std::int16_t best = std::numeric_limits<std::int16_t>::max();
 
             for (auto& move : ml) {
-                std::int16_t score;
+                std::int16_t score = 0;
 
                 // disfavor making king moves that isn't castling by 20 points.
                 if (kingSq == move.from() &&
                     move.typeOf() != chess::Move::CASTLING)
                     score = min ? 20 : -20;
-
 
                 board.makeMove(move);
 
@@ -564,14 +563,14 @@ public:
             std::int16_t best = std::numeric_limits<std::int16_t>::min();
 
             for (auto& move : ml) {
-                std::int16_t score;
-                board.makeMove(move);
+                std::int16_t score = 0;
 
                 // disfavor making king moves that isn't castling by 20 points.
                 if (kingSq == move.from() &&
                     move.typeOf() != chess::Move::CASTLING)
                     score = min ? 20 : -20;
 
+                board.makeMove(move);
                 ncount++;
 
                 if (depth == 0) {
