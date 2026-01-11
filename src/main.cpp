@@ -446,6 +446,8 @@ public:
 
         bool found_good = false;
 
+        auto kingSq = gameBoard.kingSq(gameBoard.sideToMove());
+
         if (control.should_stop()) {
         out_of_time:
             for (auto& move : ml) {
@@ -528,7 +530,7 @@ public:
                 std::int16_t score;
 
                 // disfavor making king moves that isn't castling by 20 points.
-                if (gameBoard.kingSq(gameBoard.sideToMove()) == move.from() &&
+                if (kingSq == move.from() &&
                     move.typeOf() != chess::Move::CASTLING)
                     score = min ? 20 : -20;
 
@@ -566,7 +568,7 @@ public:
                 board.makeMove(move);
 
                 // disfavor making king moves that isn't castling by 20 points.
-                if (gameBoard.kingSq(gameBoard.sideToMove()) == move.from() &&
+                if (kingSq == move.from() &&
                     move.typeOf() != chess::Move::CASTLING)
                     score = min ? 20 : -20;
 
