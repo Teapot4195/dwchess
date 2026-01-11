@@ -443,6 +443,7 @@ public:
                                std::numeric_limits<std::int16_t>::max();
         auto bad = min ? std::numeric_limits<std::int16_t>::max() :
                               std::numeric_limits<std::int16_t>::min();
+
         bool found_good = false;
 
         if (control.should_stop()) {
@@ -526,15 +527,21 @@ public:
             for (auto& move : ml) {
                 std::int16_t score;
 
+                // disfavor making king moves that isn't castling by 20 points.
+                if (gameBoard.kingSq(gameBoard.sideToMove()) == move.from() &&
+                    move.typeOf() != chess::Move::CASTLING)
+                    score = min ? 20 : -20;
+
+
                 board.makeMove(move);
 
                 if (depth == 0) {
-                    score = evaluate(board);
+                    score += evaluate(board);
                 } else {
                     chess::Movelist child;
                     chess::movegen::legalmoves(child, board);
 
-                    score = eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
+                    score += eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
 
                     if (score > 30000)
                         score--;
@@ -558,15 +565,20 @@ public:
                 std::int16_t score;
                 board.makeMove(move);
 
+                // disfavor making king moves that isn't castling by 20 points.
+                if (gameBoard.kingSq(gameBoard.sideToMove()) == move.from() &&
+                    move.typeOf() != chess::Move::CASTLING)
+                    score = min ? 20 : -20;
+
                 ncount++;
 
                 if (depth == 0) {
-                    score = evaluate(board);
+                    score += evaluate(board);
                 } else {
                     chess::Movelist child;
                     chess::movegen::legalmoves(child, board);
 
-                    score = eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
+                    score += eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
 
                     if (score > 30000)
                         score--;
