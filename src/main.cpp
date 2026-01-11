@@ -438,7 +438,7 @@ public:
     std::random_device rd;
     std::mt19937 rng{rd()};
 
-    std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, SearchControl& control, bool min = false) {
+    std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, std::int16_t alpha, std::int16_t beta, SearchControl& control, bool min) {
         auto good = min ? std::numeric_limits<std::int16_t>::min() :
                                std::numeric_limits<std::int16_t>::max();
         auto bad = min ? std::numeric_limits<std::int16_t>::max() :
@@ -520,27 +520,69 @@ public:
         if (control.should_stop())
             goto out_of_time;
 
-        for (auto& move : ml) {
-            board.makeMove(move);
+        if (min) {
+            std::int16_t best = std::numeric_limits<std::int16_t>::max();
 
-            if (depth == 0) {
-                move.setScore(evaluate(board));
-                ncount++;
-            } else {
-                chess::Movelist child;
-                chess::movegen::legalmoves(child, board);
+            for (auto& move : ml) {
+                std::int16_t score;
 
-                auto score = eval_tree(child, board, depth - 1, control, !min).first;
+                board.makeMove(move);
 
-                if (score > 30000)
-                    score--;
-                else if (score < -30000)
-                    score++;
+                if (depth == 0) {
+                    score = evaluate(board);
+                } else {
+                    chess::Movelist child;
+                    chess::movegen::legalmoves(child, board);
+
+                    score = eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
+
+                    if (score > 30000)
+                        score--;
+                    else if (score < -30000)
+                        score++;
+                }
 
                 move.setScore(score);
-            }
+                board.unmakeMove(move);
 
-            board.unmakeMove(move);
+                best = std::min(best, score);
+                beta = std::min(beta, best);
+
+                if (beta <= alpha)
+                    break; //AB-pruning cutoff
+            }
+        } else {
+            std::int16_t best = std::numeric_limits<std::int16_t>::min();
+
+            for (auto& move : ml) {
+                std::int16_t score;
+                board.makeMove(move);
+
+                ncount++;
+
+                if (depth == 0) {
+                    score = evaluate(board);
+                } else {
+                    chess::Movelist child;
+                    chess::movegen::legalmoves(child, board);
+
+                    score = eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
+
+                    if (score > 30000)
+                        score--;
+                    else if (score < -30000)
+                        score++;
+                }
+
+                move.setScore(score);
+                board.unmakeMove(move);
+
+                best = std::max(best, score);
+                alpha = std::max(alpha, best);
+
+                if (alpha >= beta)
+                    break; // AB-pruning cutoff
+            }
         }
 
     finish:
@@ -589,7 +631,7 @@ public:
             if (control.atime > 10000)
                 MAX_DEPTH++;
 
-            auto [score, pv] = eval_tree(ml, gameBoard, MAX_DEPTH, control, control.us != chess::Color::WHITE);
+            auto [score, pv] = eval_tree(ml, gameBoard, MAX_DEPTH, std::numeric_limits<std::int16_t>::min(), std::numeric_limits<std::int16_t>::max(), control, control.us != chess::Color::WHITE);
 
             searching = false;
             should_stop = false;
