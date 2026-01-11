@@ -620,16 +620,17 @@ public:
 
             chess::movegen::legalmoves(ml, gameBoard);
 
-            std::uint8_t MAX_DEPTH = 1;
+            // TODO: it is best if we can avoid doing this weird stuff entirely
+            std::uint8_t MAX_DEPTH = 2;
 
             if (control.atime > 1000)
-                MAX_DEPTH = 3;
+                MAX_DEPTH = 4;
 
             if (control.atime > 5000)
-                MAX_DEPTH++;
+                MAX_DEPTH += 2;
 
             if (control.atime > 10000)
-                MAX_DEPTH++;
+                MAX_DEPTH += 2;
 
             auto [score, pv] = eval_tree(ml, gameBoard, MAX_DEPTH, std::numeric_limits<std::int16_t>::min(), std::numeric_limits<std::int16_t>::max(), control, control.us != chess::Color::WHITE);
 
