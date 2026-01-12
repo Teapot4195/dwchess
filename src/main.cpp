@@ -439,10 +439,11 @@ public:
     std::mt19937 rng{rd()};
 
     std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, std::int16_t alpha, std::int16_t beta, SearchControl& control, bool min) {
-        auto good = min ? std::numeric_limits<std::int16_t>::min() :
-                               std::numeric_limits<std::int16_t>::max();
-        auto bad = min ? std::numeric_limits<std::int16_t>::max() :
-                              std::numeric_limits<std::int16_t>::min();
+        // Things can overflow/underflow if we using intmin and intmax,
+        constexpr std::int16_t minimum = -31000;
+        constexpr std::int16_t maximum = 31000;
+        auto good = min ? minimum : maximum;
+        auto bad = min ? maximum : minimum;
 
         bool found_good = false;
 
