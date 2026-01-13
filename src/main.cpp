@@ -449,43 +449,7 @@ public:
 
         auto kingSq = gameBoard.kingSq(gameBoard.sideToMove());
 
-        if (control.should_stop()) {
-        out_of_time:
-            for (auto& move : ml) {
-                board.makeMove(move);
-
-                if (board.inCheck()) {
-                    auto go = board.isGameOver();
-
-                    // fastpath for wins-losses
-                    switch (go.second) {
-                        case chess::GameResult::WIN:
-                            move.setScore(bad);
-                            ncount++;
-                            board.unmakeMove(move);
-                            continue;
-                        case chess::GameResult::LOSE:
-                            move.setScore(good);
-                            ncount++;
-                            board.unmakeMove(move);
-                            continue;
-                        case chess::GameResult::DRAW:
-                            move.setScore(min ? 1 : -1);
-                            ncount++;
-                            board.unmakeMove(move);
-                            continue;
-                        case chess::GameResult::NONE:
-                            break;
-                    }
-                }
-
-                move.setScore(evaluate(board));
-                board.unmakeMove(move);
-                ncount++;
-            }
-            goto finish;
-        }
-
+        ncount += ml.size();
         for (auto& move : ml) {
             board.makeMove(move);
 
@@ -496,21 +460,16 @@ public:
                 switch (go.second) {
                     case chess::GameResult::WIN:
                         move.setScore(bad);
-                        ncount++;
-                        board.unmakeMove(move);
-                        continue;
+                        break;
                     case chess::GameResult::LOSE:
                         found_good = true;
                         move.setScore(good);
-                        ncount++;
-                        board.unmakeMove(move);
-                        continue;
+                        break;
                     case chess::GameResult::DRAW:
                         move.setScore(min ? 1 : -1);
-                        ncount++;
-                        board.unmakeMove(move);
-                        continue;
+                        break;
                     case chess::GameResult::NONE:
+                        move.setScore(evaluate(board));
                         break;
                 }
             }
@@ -518,11 +477,12 @@ public:
             board.unmakeMove(move);
         }
 
+        if (control.should_stop())
+            goto finish;
+
         if (found_good)
             goto finish;
 
-        if (control.should_stop())
-            goto out_of_time;
 
         if (min) {
             std::int16_t best = std::numeric_limits<std::int16_t>::max();
@@ -572,7 +532,6 @@ public:
                     score = min ? 20 : -20;
 
                 board.makeMove(move);
-                ncount++;
 
                 if (depth == 0) {
                     score += evaluate(board);
