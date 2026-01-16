@@ -437,135 +437,32 @@ public:
 
     std::random_device rd;
     std::mt19937 rng{rd()};
+    
+    std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, std::int16_t alpha, std::int16_t beta, SearchControl& control, bool min);
+    
+    std::int16_t eval_tree_move(chess::Move& move, chess::Board& board, std::uint8_t depth, std::int16_t alpha, std::int16_t beta, SearchControl& control, bool min, const chess::Square& kingSq) {
+        std::int16_t score = 0;
 
-    std::pair<std::int16_t, chess::Move> eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, std::int16_t alpha, std::int16_t beta, SearchControl& control, bool min) {
-        // Things can overflow/underflow if we using intmin and intmax,
-        constexpr std::int16_t minimum = -31000;
-        constexpr std::int16_t maximum = 31000;
-        auto good = min ? minimum : maximum;
-        auto bad = min ? maximum : minimum;
+        // disfavor making king moves that isn't castling by 20 points.
+        if (kingSq == move.from() &&
+            move.typeOf() != chess::Move::CASTLING)
+            score = min ? 20 : -20;
 
-        bool found_good = false;
-
-        auto kingSq = gameBoard.kingSq(gameBoard.sideToMove());
-
-        ncount += ml.size();
-        for (auto& move : ml) {
-            board.makeMove(move);
-
-            if (board.inCheck()) {
-                auto go = board.isGameOver();
-
-                // fastpath for wins-losses
-                switch (go.second) {
-                    case chess::GameResult::WIN:
-                        move.setScore(bad);
-                        break;
-                    case chess::GameResult::LOSE:
-                        found_good = true;
-                        move.setScore(good);
-                        break;
-                    case chess::GameResult::DRAW:
-                        move.setScore(min ? 1 : -1);
-                        break;
-                    case chess::GameResult::NONE:
-                        move.setScore(evaluate(board));
-                        break;
-                }
-            } else
-                move.setScore(evaluate(board));
-                
-
-            board.unmakeMove(move);
-        }
-
-        if (control.should_stop())
-            goto finish;
-
-        if (found_good)
-            goto finish;
-
-
-        if (min) {
-            std::int16_t best = std::numeric_limits<std::int16_t>::max();
-
-            for (auto& move : ml) {
-                std::int16_t score = 0;
-
-                // disfavor making king moves that isn't castling by 20 points.
-                if (kingSq == move.from() &&
-                    move.typeOf() != chess::Move::CASTLING)
-                    score = min ? 20 : -20;
-
-                board.makeMove(move);
-
-                if (depth == 0) {
-                    score += evaluate(board);
-                } else {
-                    chess::Movelist child;
-                    chess::movegen::legalmoves(child, board);
-
-                    score += eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
-
-                    if (score > 30000)
-                        score--;
-                    else if (score < -30000)
-                        score++;
-                }
-
-                move.setScore(score);
-                board.unmakeMove(move);
-
-                best = std::min(best, score);
-                beta = std::min(beta, best);
-
-                if (beta <= alpha)
-                    break; //AB-pruning cutoff
-            }
+        if (depth == 0) {
+            score += evaluate(board);
         } else {
-            std::int16_t best = std::numeric_limits<std::int16_t>::min();
+            chess::Movelist child;
+            chess::movegen::legalmoves(child, board);
 
-            for (auto& move : ml) {
-                std::int16_t score = 0;
+            score += eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
 
-                // disfavor making king moves that isn't castling by 20 points.
-                if (kingSq == move.from() &&
-                    move.typeOf() != chess::Move::CASTLING)
-                    score = min ? 20 : -20;
-
-                board.makeMove(move);
-
-                if (depth == 0) {
-                    score += evaluate(board);
-                } else {
-                    chess::Movelist child;
-                    chess::movegen::legalmoves(child, board);
-
-                    score += eval_tree(child, board, depth - 1, alpha, beta, control, !min).first;
-
-                    if (score > 30000)
-                        score--;
-                    else if (score < -30000)
-                        score++;
-                }
-
-                move.setScore(score);
-                board.unmakeMove(move);
-
-                best = std::max(best, score);
-                alpha = std::max(alpha, best);
-
-                if (alpha >= beta)
-                    break; // AB-pruning cutoff
-            }
+            if (score > 30000)
+                score--;
+            else if (score < -30000)
+                score++;
         }
 
-    finish:
-        auto iter = min ?
-            std::ranges::min_element(ml, {}, [](const chess::Move& m) { return m.score(); }) :
-            std::ranges::max_element(ml, {}, [](const chess::Move& m) { return m.score(); });
-
-        return {iter->score(), *iter};
+        return score;
     }
 
     virtual void run() {
@@ -628,6 +525,98 @@ public:
         }
     }
 };
+
+std::pair<std::int16_t, chess::Move> UCIEngine::eval_tree(chess::Movelist& ml, chess::Board& board, std::uint8_t depth, std::int16_t alpha, std::int16_t beta, SearchControl& control, bool min) {
+    // Things can overflow/underflow if we using intmin and intmax,
+    constexpr std::int16_t minimum = -31000;
+    constexpr std::int16_t maximum = 31000;
+    auto good = min ? minimum : maximum;
+    auto bad = min ? maximum : minimum;
+
+    bool found_good = false;
+
+    auto kingSq = gameBoard.kingSq(gameBoard.sideToMove());
+
+    ncount += ml.size();
+    for (auto& move : ml) {
+        board.makeMove(move);
+
+        if (board.inCheck()) {
+            auto go = board.isGameOver();
+
+            // fastpath for wins-losses
+            switch (go.second) {
+                case chess::GameResult::WIN:
+                    move.setScore(bad);
+                    break;
+                case chess::GameResult::LOSE:
+                    found_good = true;
+                    move.setScore(good);
+                    break;
+                case chess::GameResult::DRAW:
+                    move.setScore(min ? 1 : -1);
+                    break;
+                case chess::GameResult::NONE:
+                    move.setScore(evaluate(board));
+                    break;
+            }
+        } else
+            move.setScore(evaluate(board));
+
+        board.unmakeMove(move);
+    }
+
+    if (control.should_stop())
+        goto finish;
+
+    if (found_good)
+        goto finish;
+
+    std::ranges::sort(ml, {}, [](const chess::Move& m) { return m.score(); }); 
+
+    if (min) {
+        std::int16_t best = std::numeric_limits<std::int16_t>::max();
+
+        for (auto& move : ml) {
+            board.makeMove(move);
+        
+            auto score = eval_tree_move(move, board, depth, alpha, beta, control, min, kingSq);
+            
+            move.setScore(score);
+            board.unmakeMove(move);
+
+            best = std::min(best, score);
+            beta = std::min(beta, best);
+
+            if (beta <= alpha)
+                break; //AB-pruning cutoff
+        }
+    } else {
+        std::int16_t best = std::numeric_limits<std::int16_t>::min();
+
+        for (auto& move : ml) {
+            board.makeMove(move);
+        
+            auto score = eval_tree_move(move, board, depth, alpha, beta, control, min, kingSq);
+            
+            move.setScore(score);
+            board.unmakeMove(move);
+
+            best = std::max(best, score);
+            alpha = std::max(alpha, best);
+
+            if (alpha >= beta)
+                break; // AB-pruning cutoff
+        }
+    }
+
+finish:
+    auto iter = min ?
+        std::ranges::min_element(ml, {}, [](const chess::Move& m) { return m.score(); }) :
+        std::ranges::max_element(ml, {}, [](const chess::Move& m) { return m.score(); });
+
+    return {iter->score(), *iter};
+}
 
 bool SearchControl::should_stop() const {
     if (engine->should_stop)
