@@ -474,7 +474,6 @@ public:
                 }
             } else
                 move.setScore(evaluate(board));
-                
 
             board.unmakeMove(move);
         }
@@ -485,6 +484,7 @@ public:
         if (found_good)
             goto finish;
 
+        std::ranges::sort(ml, {}, [](const chess::Move& m) { return m.score(); }); 
 
         if (min) {
             std::int16_t best = std::numeric_limits<std::int16_t>::max();
