@@ -444,9 +444,13 @@ public:
         std::int16_t score = 0;
 
         // disfavor making king moves that isn't castling by 20 points.
-        if (kingSq == move.from() &&
-            move.typeOf() != chess::Move::CASTLING)
-            score = min ? 20 : -20;
+        // favor castling by 10 points
+        if (kingSq == move.from()) {
+            if (move.typeOf() != chess::Move::CASTLING)
+                score += min ? 20 : -20;
+            else
+                score += min ? 10 : -10;
+        }
 
         if (depth == 0) {
             score += evaluate(board);
