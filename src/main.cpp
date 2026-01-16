@@ -484,7 +484,10 @@ public:
         if (found_good)
             goto finish;
 
-        std::ranges::sort(ml, {}, [](const chess::Move& m) { return m.score(); }); 
+        if (min)
+            std::ranges::sort(ml, std::less{}, [](const chess::Move& m) { return m.score(); });
+        else
+            std::ranges::sort(ml, std::greater{}, [](const chess::Move& m) { return m.score(); });
 
         if (min) {
             std::int16_t best = std::numeric_limits<std::int16_t>::max();
