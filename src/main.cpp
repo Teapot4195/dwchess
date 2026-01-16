@@ -472,7 +472,9 @@ public:
                         move.setScore(evaluate(board));
                         break;
                 }
-            }
+            } else
+                move.setScore(evaluate(board));
+                
 
             board.unmakeMove(move);
         }
